@@ -268,6 +268,12 @@ export class QueueEvents extends QueueBase {
   private running = false;
   private blocking = false;
   private eventWaitResolvers: Array<() => void> = [];
+  private consumerInitSettled = false;
+  private readonly consumerInit!: {
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (reason?: unknown) => void;
+  };
 
   private readonly onEventsChannelNotification = (payload?: string) => {
     const prefix = `${this.qualifiedName}:`;
@@ -283,6 +289,13 @@ export class QueueEvents extends QueueBase {
     },
     Connection?: typeof PgPoolConnection,
   ) {
+    let initResolve!: () => void;
+    let initReject!: (reason?: unknown) => void;
+    const initPromise = new Promise<void>((resolve, reject) => {
+      initResolve = resolve;
+      initReject = reject;
+    });
+
     super(
       name,
       {
@@ -292,6 +305,12 @@ export class QueueEvents extends QueueBase {
       Connection,
       true,
     );
+
+    this.consumerInit = {
+      promise: initPromise,
+      resolve: initResolve,
+      reject: initReject,
+    };
 
     this.opts = Object.assign(
       {
@@ -311,6 +330,34 @@ export class QueueEvents extends QueueBase {
     if (autorun) {
       this.run().catch(error => this.emit('error', error));
     }
+  }
+
+  /**
+   * Resolves when a DB client exists and the event consumer has set its cursor
+   * and subscribed on the LISTEN channel so callers do not enqueue work that
+   * finishes before `emq_events` polling can observe new rows (which would
+   * otherwise permanently skip those events when using the default `$` cursor).
+   */
+  override async waitUntilReady(): Promise<EmqClient> {
+    const client = await super.waitUntilReady();
+    await this.consumerInit.promise;
+    return client;
+  }
+
+  private resolveConsumerInit(): void {
+    if (this.consumerInitSettled) {
+      return;
+    }
+    this.consumerInitSettled = true;
+    this.consumerInit.resolve();
+  }
+
+  private rejectConsumerInit(reason?: unknown): void {
+    if (this.consumerInitSettled) {
+      return;
+    }
+    this.consumerInitSettled = true;
+    this.consumerInit.reject(reason);
   }
 
   emit<
@@ -360,6 +407,7 @@ export class QueueEvents extends QueueBase {
         await this.consumeEvents(client);
       } catch (error) {
         this.running = false;
+        this.rejectConsumerInit(error);
         throw error;
       }
     } else {
@@ -405,6 +453,8 @@ export class QueueEvents extends QueueBase {
       // client is not wired yet), so no try/catch needed.
       await nm.subscribe(ch, this.onEventsChannelNotification);
     }
+
+    this.resolveConsumerInit();
 
     try {
     while (!this.closing) {
