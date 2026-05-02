@@ -62,7 +62,6 @@ export async function dropTestSchema(
   try {
     await Promise.race([dropPromise, timeoutPromise]);
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.warn(`[elephantmq tests] dropTestSchema(${schema}) failed:`, (e as Error).message);
   }
 }

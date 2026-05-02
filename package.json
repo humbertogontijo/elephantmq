@@ -64,7 +64,7 @@
     "clean:temp:files": "rimraf dist/cjs/elephantmq.d.ts dist/esm/elephantmq.d.ts dist/tsdoc-metadata.json",
     "write:dist:pkg": "node scripts/write-dist-pkg.cjs",
     "copy:sql": "rimraf dist/cjs/sql dist/esm/sql && cpx \"./src/sql/**/*.sql\" ./dist/cjs/sql && cpx \"./src/sql/**/*.sql\" ./dist/esm/sql",
-    "lint": "eslint . && node scripts/lint-sql.js",
+    "lint": "node scripts/lint-sql.js && eslint .",
     "pretest": "npm run build",
     "migrate:test": "node scripts/migrate-test.js",
     "sql-smoketest": "node scripts/sql-smoketest.js",

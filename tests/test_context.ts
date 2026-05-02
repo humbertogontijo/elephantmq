@@ -58,7 +58,6 @@ export async function closeAll(
   );
   for (const r of results) {
     if (r.status === 'rejected') {
-      // eslint-disable-next-line no-console
       console.warn('[elephantmq tests] close() rejected:', r.reason);
     }
   }

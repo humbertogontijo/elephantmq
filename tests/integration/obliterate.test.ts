@@ -26,7 +26,7 @@ describe('Queue.obliterate', () => {
     try {
       await queue.add('a', {});
       await queue.add('b', {});
-      let counts = await queue.getJobCounts('wait');
+      const counts = await queue.getJobCounts('wait');
       expect(counts.wait).toBe(2);
 
       await queue.obliterate();

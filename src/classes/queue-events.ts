@@ -379,7 +379,6 @@ export class QueueEvents extends QueueBase {
       // degrades to polling only, which misses low-latency wakeups. QueueBase
       // always constructs with hasBlockingConnection=true, so this should not
       // normally happen.
-      // eslint-disable-next-line no-console
       console.warn(
         '[elephantmq] QueueEvents: no NotificationManager on connection; falling back to polling only.',
       );

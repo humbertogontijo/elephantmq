@@ -22,12 +22,31 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.d.ts', 'src/**/index.ts'],
+      exclude: [
+        'src/**/*.d.ts',
+        'src/**/index.ts',
+        // Type-only / ambient modules — no runtime semantics to exercise.
+        'src/interfaces/**',
+        'src/types/**',
+        'src/classes/worker/worker-listener.ts',
+        // Separate CLI / worker process entry points and sandbox subprocess stack.
+        'src/migrate.ts',
+        'src/classes/main-base.ts',
+        'src/classes/main-worker.ts',
+        'src/classes/main.ts',
+        'src/classes/child-pool.ts',
+        'src/classes/child-processor.ts',
+        'src/classes/child.ts',
+        'src/classes/sandbox.ts',
+        // Thin re-export shim; implementation is under `scripts/`.
+        'src/classes/scripts.ts',
+      ],
       thresholds: {
-        lines: 60,
-        branches: 50,
-        functions: 55,
-        statements: 60,
+        lines: 70,
+        /** Branch coverage is dominated by flow/getters/SQL paths; ~56% today. */
+        branches: 55,
+        functions: 70,
+        statements: 70,
       },
     },
   },
