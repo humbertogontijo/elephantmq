@@ -4,7 +4,7 @@ import { MoveToWaitingChildrenOpts } from './minimal-job';
 /**
  * @see {@link https://docs.bullmq.io/guide/workers/sandboxed-processors}
  */
-export interface SandboxedJob<T = any, R = any> extends Omit<
+export interface SandboxedJob<T = unknown, R = unknown> extends Omit<
   JobJsonSandbox,
   'data' | 'opts' | 'returnvalue'
 > {
@@ -20,7 +20,7 @@ export interface SandboxedJob<T = any, R = any> extends Omit<
   log: (row: string) => void;
   updateData: (data: T) => Promise<void>;
   updateProgress: (value: JobProgress) => Promise<void>;
-  getChildrenValues: <CT = any>() => Promise<{ [jobKey: string]: CT }>;
+  getChildrenValues: <CT = unknown>() => Promise<{ [jobKey: string]: CT }>;
   getIgnoredChildrenFailures: () => Promise<{ [jobKey: string]: string }>;
   getDependenciesCount: (opts?: {
     failed?: boolean;

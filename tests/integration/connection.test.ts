@@ -19,34 +19,42 @@ describe('Postgres connection recovery', () => {
     await uninstallTestSchema(schema);
   });
 
-  it('worker survives pg_terminate_backend on its LISTEN session', async () => {
-    const queue = newQueue('pg-term', schema);
-    const worker = newWorker('pg-term', async () => 'survived', schema, {
-      name: 'pgterm-worker',
-      concurrency: 1,
-    });
-    worker.on('error', () => undefined);
+  it(
+    'worker survives pg_terminate_backend on its LISTEN session',
+    async () => {
+      const queue = newQueue('pg-term', schema);
+      const worker = newWorker('pg-term', async () => 'survived', schema, {
+        name: 'pgterm-worker',
+        concurrency: 1,
+      });
+      worker.on('error', () => undefined);
 
-    try {
-      await worker.waitUntilReady();
+      try {
+        await worker.waitUntilReady();
 
-      const { rows: pids } = await testPool.query<{ pid: number }>(
-        `select pid from pg_stat_activity
+        const { rows: pids } = await testPool.query<{ pid: number }>(
+          `select pid from pg_stat_activity
           where datname = current_database()
             and application_name like $1`,
-        ['%w:pgterm-worker%'],
-      );
+          ['%w:pgterm-worker%'],
+        );
 
-      expect(pids.length).toBeGreaterThanOrEqual(1);
-      const target = pids[0]!.pid;
+        expect(pids.length).toBeGreaterThanOrEqual(1);
+        const target = pids[0]!.pid;
 
-      await testPool.query('select pg_terminate_backend($1::int)', [target]);
+        await testPool.query('select pg_terminate_backend($1::int)', [target]);
 
-      await queue.add('after-term', {});
-      await waitUntil(async () => (await queue.getCompletedCount()) >= 1, 20_000);
-      await delay(500);
-    } finally {
-      await closeAll([worker, queue]);
-    }
-  });
+        await queue.add('after-term', {});
+        await waitUntil(
+          async () => (await queue.getCompletedCount()) >= 1,
+          20_000,
+        );
+        await delay(500);
+      } finally {
+        await closeAll([worker, queue]);
+      }
+    },
+    // Inner waitUntil may use the full 20s; with setup + cleanup this exceeds the default 20s test cap.
+    60_000,
+  );
 });

@@ -1,9 +1,10 @@
 import { ChildCommand } from '../enums/child-command';
-import { JobJson } from './job-json';
+import type { JobJsonSandbox } from '../types/job-json-sandbox';
 
 export interface ParentMessage {
   cmd: ChildCommand;
-  value?: any;
+  value?: unknown;
   err?: Error;
-  job?: JobJson;
+  job?: JobJsonSandbox;
+  token?: string;
 }

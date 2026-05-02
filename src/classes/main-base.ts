@@ -5,24 +5,28 @@
 import { ChildProcessor } from './child-processor';
 import { ParentCommand, ChildCommand } from '../enums';
 import { errorToJSON, toString } from '../utils';
-import { Receiver } from '../interfaces';
+import { ParentMessage, ChildMessage, Receiver } from '../interfaces';
 
-export default (send: (msg: any) => Promise<void>, receiver: Receiver) => {
+export default (
+  send: (msg: ChildMessage) => Promise<void>,
+  receiver: Receiver,
+) => {
   const childProcessor = new ChildProcessor(send, receiver);
 
-  receiver?.on('message', async msg => {
+  receiver?.on('message', async (msg: unknown) => {
     try {
-      switch (msg.cmd as ChildCommand) {
+      const m = msg as ParentMessage;
+      switch (m.cmd as ChildCommand) {
         case ChildCommand.Init:
-          await childProcessor.init(msg.value);
+          await childProcessor.init(m.value as string);
           break;
         case ChildCommand.Start:
-          await childProcessor.start(msg.job, msg?.token);
+          await childProcessor.start(m.job!, m.token);
           break;
         case ChildCommand.Stop:
           break;
         case ChildCommand.Cancel:
-          childProcessor.cancel(msg.value);
+          childProcessor.cancel(m.value as string | undefined);
           break;
       }
     } catch {

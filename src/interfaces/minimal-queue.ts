@@ -15,11 +15,11 @@ export interface MinimalQueue extends ScriptQueueContext {
    * @param args -
    * @returns
    */
-  emit(event: string | symbol, ...args: any[]): boolean;
-  on(event: string | symbol, listener: (...args: any[]) => void): this;
+  emit(event: string | symbol, ...args: unknown[]): boolean;
+  on(event: string | symbol, listener: (...args: unknown[]) => void): this;
   removeListener(
     event: string | symbol,
-    listener: (...args: any[]) => void,
+    listener: (...args: unknown[]) => void,
   ): this;
   waitUntilReady(): Promise<EmqClient>;
   /**

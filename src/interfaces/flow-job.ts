@@ -4,7 +4,7 @@ import { QueueOptions } from './queue-options';
 export interface FlowJobBase<T> {
   name: string;
   queueName: string;
-  data?: any;
+  data?: unknown;
   prefix?: string;
   opts?: Omit<T, 'repeat'>;
   children?: FlowChildJob[];

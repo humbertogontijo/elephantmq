@@ -18,7 +18,7 @@ export interface LockManagerWorkerContext {
   /**
    * Emits events to worker listeners.
    */
-  emit(event: string | symbol, ...args: any[]): boolean;
+  emit(event: string | symbol, ...args: unknown[]): boolean;
 
   /**
    * Wraps code with telemetry tracing.

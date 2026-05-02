@@ -1,5 +1,10 @@
 import { ChildCommand, ParentCommand } from '../enums';
-import { ChildMessage } from '../interfaces';
+import {
+  ChildMessage,
+  DependenciesOpts,
+  MoveToWaitingChildrenOpts,
+} from '../interfaces';
+import { JobProgress } from '../types';
 import { Child } from './child';
 import { ChildPool } from './child-pool';
 import { Job } from './job';
@@ -54,7 +59,7 @@ const sandbox = <T, R, N extends string>(
                 switch (msg.cmd) {
                   case ParentCommand.Completed:
                     enqueue(async () => {
-                      resolve(msg.value);
+                      resolve(msg.value as R);
                     });
                     break;
                   case ParentCommand.Failed:
@@ -67,27 +72,38 @@ const sandbox = <T, R, N extends string>(
                     break;
                   }
                   case ParentCommand.Progress:
-                    enqueue(() => job.updateProgress(msg.value));
+                    enqueue(() =>
+                      job.updateProgress(msg.value as JobProgress),
+                    );
                     break;
                   case ParentCommand.Log:
-                    enqueue(() => job.log(msg.value));
+                    enqueue(() => job.log(msg.value as string));
                     break;
                   case ParentCommand.MoveToDelayed:
+                    enqueue(() => {
+                      const mv = msg.value as {
+                        timestamp: number;
+                        token?: string;
+                      };
+                      return job.moveToDelayed(mv.timestamp, mv.token);
+                    });
+                    break;
+                  case ParentCommand.MoveToWait:
                     enqueue(() =>
-                      job.moveToDelayed(
-                        msg.value?.timestamp,
-                        msg.value?.token,
+                      job.moveToWait(
+                        (msg.value as { token?: string })?.token,
                       ),
                     );
                     break;
-                  case ParentCommand.MoveToWait:
-                    enqueue(() => job.moveToWait(msg.value?.token));
-                    break;
                   case ParentCommand.MoveToWaitingChildren:
                     {
+                      const moveOpts = msg.value as {
+                        token?: string;
+                        opts?: MoveToWaitingChildrenOpts;
+                      };
                       const value = await job.moveToWaitingChildren(
-                        msg.value?.token,
-                        msg.value?.opts,
+                        moveOpts?.token ?? '',
+                        moveOpts.opts ?? {},
                       );
                       ch.send({
                         requestId: msg.requestId,
@@ -97,7 +113,7 @@ const sandbox = <T, R, N extends string>(
                     }
                     break;
                   case ParentCommand.Update:
-                    enqueue(() => job.updateData(msg.value));
+                    enqueue(() => job.updateData(msg.value as T));
                     break;
                   case ParentCommand.GetChildrenValues:
                     {
@@ -121,7 +137,14 @@ const sandbox = <T, R, N extends string>(
                     break;
                   case ParentCommand.GetDependenciesCount:
                     {
-                      const value = await job.getDependenciesCount(msg.value);
+                      const value = await job.getDependenciesCount(
+                        msg.value as {
+                          failed?: boolean;
+                          ignored?: boolean;
+                          processed?: boolean;
+                          unprocessed?: boolean;
+                        },
+                      );
                       ch.send({
                         requestId: msg.requestId,
                         cmd: ChildCommand.GetDependenciesCountResponse,
@@ -131,7 +154,9 @@ const sandbox = <T, R, N extends string>(
                     break;
                   case ParentCommand.GetDependencies:
                     {
-                      const value = await job.getDependencies(msg.value);
+                      const value = await job.getDependencies(
+                        msg.value as DependenciesOpts,
+                      );
                       ch.send({
                         requestId: msg.requestId,
                         cmd: ChildCommand.GetDependenciesResponse,

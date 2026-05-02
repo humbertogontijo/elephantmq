@@ -1,11 +1,11 @@
 import { JobSchedulerTemplateOptions } from '../types';
 
-export interface JobSchedulerTemplateJson<D = any> {
+export interface JobSchedulerTemplateJson<D = unknown> {
   data?: D;
   opts?: JobSchedulerTemplateOptions;
 }
 
-export interface JobSchedulerJson<D = any> {
+export interface JobSchedulerJson<D = unknown> {
   key: string; // key is actually the job scheduler id
   name: string;
   id?: string | null;

@@ -8,7 +8,7 @@ import { SpanKind } from '../enums';
  * limited to it.
  *
  */
-export interface Telemetry<Context = any> {
+export interface Telemetry<Context = unknown> {
   /**
    * Tracer instance
    *
@@ -142,14 +142,14 @@ export interface Gauge {
  * The context manager is responsible for managing the context and propagating
  * it across the application.
  */
-export interface ContextManager<Context = any> {
+export interface ContextManager<Context = unknown> {
   /**
    * Creates a new context and sets it as active for the fn passed as last argument
    *
    * @param context - the context to set as active
    * @param fn - the function to execute with the context
    */
-  with<A extends (...args: any[]) => any>(
+  with<A extends (...args: never[]) => unknown>(
     context: Context,
     fn: A,
   ): ReturnType<A>;
@@ -182,7 +182,7 @@ export interface ContextManager<Context = any> {
  * Tracer interface
  *
  */
-export interface Tracer<Context = any> {
+export interface Tracer<Context = unknown> {
   /**
    * startSpan creates a new Span with the given name and options on an optional
    * context. If the context is not provided, the current active context should be
@@ -203,7 +203,7 @@ export interface SpanOptions {
 /**
  * Span interface
  */
-export interface Span<Context = any> {
+export interface Span<Context = unknown> {
   /**
    * setSpanOnContext sets the span on the context. This is useful when you want
    * to propagate the span across the application.

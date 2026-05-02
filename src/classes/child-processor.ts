@@ -337,9 +337,14 @@ const waitResponse = async (
   cmd: string,
 ) => {
   return new Promise((resolve, reject) => {
-    const listener = (msg: { requestId: string; value: any }) => {
-      if (msg.requestId === requestId) {
-        resolve(msg.value);
+    const listener = (msg: unknown) => {
+      if (
+        typeof msg === 'object' &&
+        msg !== null &&
+        'requestId' in msg &&
+        (msg as { requestId: string }).requestId === requestId
+      ) {
+        resolve((msg as { requestId: string; value?: unknown }).value);
         receiver.off('message', listener);
       }
     };

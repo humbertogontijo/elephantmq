@@ -9,12 +9,12 @@ export type BulkJobOptions = Omit<JobsOptions, 'repeat'>;
 
 export interface MoveToDelayedOpts {
   skipAttempt?: boolean;
-  fieldsToUpdate?: Record<string, any>;
+  fieldsToUpdate?: Record<string, unknown>;
   fetchNext?: boolean;
 }
 
 export interface RetryJobOpts {
-  fieldsToUpdate?: Record<string, any>;
+  fieldsToUpdate?: Record<string, unknown>;
 }
 
 export interface MoveToWaitingChildrenOpts {
@@ -55,8 +55,8 @@ export interface DependenciesOpts {
  * MinimalJob
  */
 export interface MinimalJob<
-  DataType = any,
-  ReturnType = any,
+  DataType = unknown,
+  ReturnType = unknown,
   NameType extends string = string,
 > {
   /**
