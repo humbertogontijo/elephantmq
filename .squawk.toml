@@ -1,0 +1,13 @@
+# Squawk (PostgreSQL SQL linter): https://squawkhq.com/docs/rules
+# Schema/bootstrap choices below are intentional for this project; we still lint
+# for unsafe patterns and parse/syntax issues.
+
+excluded_rules = [
+  # Function bodies and one-shot bootstrap migrations do not set session timeouts.
+  "require-timeout-settings",
+  # int/serial match BullMQ-style IDs and existing migrations.
+  "prefer-bigint-over-int",
+  "prefer-identity",
+  # Initial schema build runs on empty DBs; non-concurrent indexes are acceptable.
+  "require-concurrent-index-creation",
+]
