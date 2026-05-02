@@ -1,0 +1,67 @@
+name: Bug report
+description: Report something that isn't working as documented.
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more detail you
+        give us, the faster we can act on it.
+
+        For suspected security issues, please follow [SECURITY.md](../../SECURITY.md)
+        instead of using this template.
+  - type: input
+    id: elephantmq-version
+    attributes:
+      label: elephantmq version
+      description: Output of `npm ls elephantmq`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: postgres-version
+    attributes:
+      label: PostgreSQL version
+      description: Output of `SELECT version();`.
+      placeholder: "PostgreSQL 16.2 on x86_64-pc-linux-gnu, ..."
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node -v`.
+      placeholder: "v20.11.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include any error messages or stack traces.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        A minimal code snippet (or test case) that reproduces the issue.
+        See `tests/integration/` for examples of self-contained test cases.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, related issues, links — anything that helps.
+    validations:
+      required: false
