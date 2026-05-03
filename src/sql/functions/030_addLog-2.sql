@@ -19,7 +19,14 @@ begin
   if p_keep_logs > 0 then
     delete from :EMQ_SCHEMA.emq_job_logs l
     where l.job_pk = jpk
-      and l.seq <= s - p_keep_logs;
+      and l.seq in (
+        select l2.seq
+        from :EMQ_SCHEMA.emq_job_logs l2
+        where l2.job_pk = jpk
+          and l2.seq <= s - p_keep_logs
+        order by l2.seq
+        for update
+      );
   end if;
   perform :EMQ_SCHEMA.emq_emit_event_v1(p_queue_id, 'logs', jsonb_build_object('jobId', p_job_id));
   -- BullMQ's addLog-2.lua returns `min(keepLogs, logCount)` so callers see

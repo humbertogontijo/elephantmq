@@ -44,9 +44,18 @@ begin
     from :EMQ_SCHEMA.emq_events where queue_id = p_queue_id;
     v_batch := greatest(2, v_max_len / 2);
     if v_cnt > v_max_len + v_batch then
+      -- Lock deletion candidates in deterministic `id` order so concurrent
+      -- trims (e.g. moveToFinished vs moveToActive delayed promotion, both
+      -- before/with advisory queue locks) cannot deadlock on tuple locks.
       delete from :EMQ_SCHEMA.emq_events e
-      where e.queue_id = p_queue_id
-        and e.id <= v_mx - (v_max_len + v_batch);
+      where e.id in (
+        select e2.id
+        from :EMQ_SCHEMA.emq_events e2
+        where e2.queue_id = p_queue_id
+          and e2.id <= v_mx - (v_max_len + v_batch)
+        order by e2.id
+        for update
+      );
     end if;
   end if;
 

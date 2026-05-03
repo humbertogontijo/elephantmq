@@ -42,7 +42,13 @@ export async function trimEventsForQueue(
   const maxId = parseInt(row.m, 10);
   const threshold = Math.max(0, maxId - maxLen);
   const r = await client.query(
-    `delete from ${S}.emq_events where queue_id = $1 and id < $2::bigint`,
+    `delete from ${S}.emq_events e
+     where e.id in (
+       select e2.id from ${S}.emq_events e2
+       where e2.queue_id = $1 and e2.id < $2::bigint
+       order by e2.id
+       for update
+     )`,
     [queueId, String(threshold)],
   );
   return r.rowCount ?? 0;

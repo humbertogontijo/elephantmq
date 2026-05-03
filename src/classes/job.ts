@@ -686,10 +686,21 @@ export class Job<
     }
     if (keepLogs) {
       await client.query(
-        `delete from ${S}.emq_job_logs
-         where job_pk = $1::bigint
-           and seq not in (
-             select seq from ${S}.emq_job_logs where job_pk = $1::bigint order by seq desc limit $2
+        `delete from ${S}.emq_job_logs l
+         where l.job_pk = $1::bigint
+           and l.seq in (
+             select l2.seq
+             from ${S}.emq_job_logs l2
+             where l2.job_pk = $1::bigint
+               and l2.seq not in (
+                 select l3.seq
+                 from ${S}.emq_job_logs l3
+                 where l3.job_pk = $1::bigint
+                 order by l3.seq desc
+                 limit $2
+               )
+             order by l2.seq
+             for update
            )`,
         [pk.toString(), keepLogs],
       );

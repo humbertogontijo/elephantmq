@@ -1118,7 +1118,13 @@ export class Queue<
         const maxId = parseInt(row.m, 10);
         const threshold = maxId - maxLength;
         const r = await client.query(
-          `delete from ${S}.emq_events where queue_id = $1 and id <= $2::bigint`,
+          `delete from ${S}.emq_events e
+           where e.id in (
+             select e2.id from ${S}.emq_events e2
+             where e2.queue_id = $1 and e2.id <= $2::bigint
+             order by e2.id
+             for update
+           )`,
           [qid, String(threshold)],
         );
         return r.rowCount ?? 0;
