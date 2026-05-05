@@ -93,6 +93,57 @@ describe('Deduplication', () => {
     }
   });
 
+  it('replace: true on a wait dedup swaps in a new job', async () => {
+    const queue = newQueue('dedup-replace-wait', schema);
+    try {
+      const first = await queue.add(
+        'd',
+        { v: 1 },
+        { deduplication: { id: 'rep-wait-key' } },
+      );
+      const second = await queue.add(
+        'd',
+        { v: 2 },
+        { deduplication: { id: 'rep-wait-key', replace: true } },
+      );
+      expect(second.id).not.toBe(first.id);
+      const counts = await queue.getJobCounts('wait');
+      expect(counts.wait).toBe(1);
+      const waiting = await queue.getWaiting(0, 10);
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]!.data).toEqual({ v: 2 });
+    } finally {
+      await closeAll([queue]);
+    }
+  });
+
+  it('replace: true on a prioritized dedup swaps in a new job', async () => {
+    const queue = newQueue('dedup-replace-prio', schema);
+    try {
+      const first = await queue.add(
+        'd',
+        { v: 1 },
+        { priority: 1, deduplication: { id: 'rep-prio-key' } },
+      );
+      const second = await queue.add(
+        'd',
+        { v: 2 },
+        {
+          priority: 1,
+          deduplication: { id: 'rep-prio-key', replace: true },
+        },
+      );
+      expect(second.id).not.toBe(first.id);
+      const counts = await queue.getJobCounts('prioritized');
+      expect(counts.prioritized).toBe(1);
+      const jobs = await queue.getPrioritized();
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.data).toEqual({ v: 2 });
+    } finally {
+      await closeAll([queue]);
+    }
+  });
+
   it('replace: true on a delayed dedup swaps in a new delayed job', async () => {
     const queue = newQueue('dedup-replace', schema);
     try {

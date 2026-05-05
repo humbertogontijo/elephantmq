@@ -174,6 +174,41 @@ begin
     end if;
   end if;
 
+  -- replace: remove prior prioritized job for this dedup id (mirror addDelayedJob replace path).
+  if nullif(trim(p_dedup_id), '') is not null
+     and v_de_opts is not null
+     and (v_de_opts->>'replace') = 'true' then
+    select d.job_id into v_dedup_existing
+    from :EMQ_SCHEMA.emq_deduplication d
+    where d.queue_id = p_queue_id
+      and d.dedup_id = p_dedup_id;
+
+    if v_dedup_existing is not null then
+      delete from :EMQ_SCHEMA.emq_jobs j
+      where j.queue_id = p_queue_id
+        and j.job_id = v_dedup_existing
+        and j.state = 'prioritized':: :EMQ_SCHEMA.emq_job_state;
+
+      if found then
+        delete from :EMQ_SCHEMA.emq_deduplication d
+        where d.queue_id = p_queue_id
+          and d.dedup_id = p_dedup_id
+          and d.job_id = v_dedup_existing;
+        perform :EMQ_SCHEMA.emq_emit_event_v1(
+          p_queue_id,
+          'deduplicated',
+          jsonb_build_object(
+            'jobId', v_job_id,
+            'deduplicationId', p_dedup_id,
+            'deduplicatedJobId', v_dedup_existing
+          )
+        );
+      else
+        return v_dedup_existing;
+      end if;
+    end if;
+  end if;
+
   if nullif(trim(p_dedup_id), '') is not null then
     update :EMQ_SCHEMA.emq_jobs j
     set deduplication_id = null

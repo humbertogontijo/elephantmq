@@ -37,6 +37,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Vitest. Tune parallel workers with `ELEPHANTMQ_TEST_MAX_FORKS` and
   `ELEPHANTMQ_TEST_PARALLEL` instead.
 
+## [1.0.2] - 2026-05-05
+
+### Fixed
+
+- `deduplication.replace` on **standard** (`emq_add_standard_job_v1`), **prioritized**
+  (`emq_add_prioritized_job_v1`), and **parent / waiting-children**
+  (`emq_add_parent_job_v1`) paths now removes the prior job in the matching
+  state for the same dedup key—mirroring the existing **delayed** replace
+  behaviour—so re-adding with a new auto `job_id` no longer violates
+  `emq_jobs_dedup_uniq`.
+
 ## [1.0.0] - 2026-05-02
 
 First public release.
@@ -72,5 +83,6 @@ First public release.
 - Redis-flavoured terminology (`redisVersion`, `databaseType`, `ioredis:close`)
   from the public API.
 
-[Unreleased]: https://github.com/humbertogontijo/elephantmq/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/humbertogontijo/elephantmq/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/humbertogontijo/elephantmq/releases/tag/v1.0.2
 [1.0.0]: https://github.com/humbertogontijo/elephantmq/releases/tag/v1.0.0
