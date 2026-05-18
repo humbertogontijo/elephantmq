@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Repeatable jobs (`JobScheduler`): worker pre-advance now sends `producerId` built from
+  `repeat:<schedulerId>:<opts.prevMillis>` (falling back to omitting `producerId` when `prevMillis`
+  is missing) instead of relying solely on `job.id`. This aligns with `emq_update_job_scheduler_v1`
+  and restores successive cron/`every` iterations when the stored job id string did not match the
+  scheduler slot millis after DB round-trips.
+
 ### Changed
 
 - **Breaking**: telemetry attribute keys renamed from `bullmq.*` to

@@ -1,6 +1,6 @@
 {
   "name": "elephantmq",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "PostgreSQL-native job queue with a familiar producer/worker API",
   "homepage": "https://github.com/humbertogontijo/elephantmq",
   "repository": {

@@ -149,4 +149,27 @@ describe('JobScheduler', () => {
       await closeAll([worker, queue]);
     }
   });
+
+  it('upsertJobScheduler cron pattern schedules multiple iterations', async () => {
+    const queue = newQueue('sched-cron-pattern', schema);
+    let runs = 0;
+    const worker = newWorker(
+      'sched-cron-pattern',
+      async () => {
+        runs++;
+      },
+      schema,
+    );
+    try {
+      await queue.upsertJobScheduler(
+        'cron-pattern-tick',
+        { pattern: '*/2 * * * * *', tz: 'UTC' },
+        { name: 'tick', data: {} },
+      );
+      await waitUntil(() => runs >= 3, 20_000, 40);
+      expect(runs).toBeGreaterThanOrEqual(3);
+    } finally {
+      await closeAll([worker, queue]);
+    }
+  });
 });

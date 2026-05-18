@@ -21,6 +21,9 @@ begin
   -- completed iteration: only the first call advances; the second finds the
   -- scheduler already advanced and becomes a no-op.
   --
+  -- When `producerId` is null, the worker trusts the caller (only
+  -- repeatable pre-advance uses this path today).
+  --
   -- Also skip the advance if a delayed job at the new `next_millis` already
   -- exists, so we never overwrite a freshly-inserted iteration. Emit a
   -- `duplicated` event so subscribers can observe the collision.

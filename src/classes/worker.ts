@@ -1019,13 +1019,28 @@ export class Worker<
           await this.retryIfFailed(
             async () => {
               const jobScheduler = await this.jobScheduler;
+              // emq_update_job_scheduler_v1 validates producerId against
+              // repeat:<schedulerId>:<scheduler.next_millis>. That millis must match the iteration slot;
+              // prefer opts.prevMillis (set when the delayed iteration was materialised) over job.id in case
+              // the id string ever diverges from the stored scheduler timestamp after PG round-trips.
+              const advanceOpts: { override: false; producerId?: string } = {
+                override: false,
+              };
+              const slotMillis = job.opts.prevMillis;
+              if (
+                typeof slotMillis === 'number' &&
+                Number.isFinite(slotMillis) &&
+                slotMillis > 0
+              ) {
+                advanceOpts.producerId = `repeat:${repeatJobKey}:${slotMillis}`;
+              }
               await jobScheduler.upsertJobScheduler(
                 repeatJobKey,
                 repeatOpts,
                 job.name,
                 job.data,
                 job.opts,
-                { override: false, producerId: job.id },
+                advanceOpts,
               );
             },
             { delayInMs: this.opts.runRetryDelay ?? 15000 },
