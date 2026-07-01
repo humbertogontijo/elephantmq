@@ -6,6 +6,7 @@ import { Job } from './job';
 import { JobState, JobType } from '../types';
 import { JobJsonRaw, Metrics, QueueMeta } from '../interfaces';
 import { MetricNames, TelemetryAttributes } from '../enums';
+import { QUEUE_EVENT_SUFFIX } from '../utils';
 
 /**
  * Provides different getters for different aspects of a queue.
@@ -555,6 +556,23 @@ export class QueueGetters<JobBase extends Job = Job> extends QueueBase {
     return rows
       .map(r => ({ name: r.a, rawname: r.a }))
       .filter(r => matcher(r.name));
+  }
+
+  /**
+   * Get the QueueEvents instances related to the queue. i.e. all the known
+   * QueueEvents listeners that are subscribed to this queue's event stream.
+   */
+  getQueueEvents(): Promise<
+    {
+      [index: string]: string;
+    }[]
+  > {
+    const queueEventsClientName = `${this.clientName(QUEUE_EVENT_SUFFIX)}`;
+
+    const matcher = (name: string): boolean =>
+      !!(name && name === queueEventsClientName);
+
+    return this.baseGetClients(matcher);
   }
 
   /**

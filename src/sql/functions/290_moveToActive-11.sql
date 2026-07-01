@@ -55,24 +55,37 @@ begin
     v_rl_dur := p_limiter_duration_ms;
   end if;
 
+  -- Expired rate-limit window: Redis deletes the key; we drop the row.
+  -- Safe to do outside the advisory lock; concurrent deletes of the same
+  -- expired row are idempotent.
+  delete from :EMQ_SCHEMA.emq_rate_limit_state r
+  where r.queue_id = p_queue_id
+    and r.expires_at is not null
+    and r.expires_at <= now();
+
+  -- Transaction-scoped advisory lock around delayed promotion, the
+  -- rate-limit gate, pause/concurrency gate, wait/prioritized pick,
+  -- activate, AND limiter INCR. BullMQ's Lua runs single-threaded inside
+  -- Redis so the read-modify-write of the limiter token is atomic. On PG
+  -- we MUST hold this lock across both the read of `v_tok` and the INCR;
+  -- otherwise N concurrent workers on a fresh queue all observe
+  -- `v_tok IS NULL`, all sneak past the gate, and the limiter
+  -- overshoots (regression seen as
+  -- `Rate Limiter > when queue is paused between rate limit > should
+  -- add active jobs to paused` finishing all 4 jobs before pause lands).
+  --
+  -- Delayed promotion MUST run inside this lock so concurrent workers
+  -- cannot double-promote the same delayed rows or duplicate `waiting`
+  -- events.
+  perform pg_advisory_xact_lock(
+    hashtextextended(:EMQ_SCHEMA_NAME_LIT, 2024000001::bigint) # p_queue_id
+  );
+
   -- Match BullMQ v5 `promoteDelayedJobs`: when the queue is paused, ready
   -- delayed jobs promote into the `paused` list rather than `wait`.
-  -- BullMQ's `promoteDelayedJobs.lua` also clears the `delay` hash field on
-  -- promotion so subsequent `job.delay` reads reflect the live state ("0,
-  -- about to run"), not the originally-requested delay. `worker.test.ts`'s
-  -- "pick standard job without delay" case asserts this directly.
-  -- Promote ready delayed jobs. Mirrors promoteDelayedJobs.lua:
-  -- emits a `waiting` event (prev='delayed') for each promoted id so that
-  -- queueEvents listeners see the transition, and clears `delay_ms` so
-  -- downstream readers report "0, about to run".
   declare
     v_promoted_id text;
   begin
-    -- Mirror promoteDelayedJobs.lua: delayed jobs with priority > 0 are
-    -- routed to the prioritized bucket, priority 0 jobs land in `wait`.
-    -- Without this, a set of delayed jobs with mixed priorities all became
-    -- ready at once and drained in wait_seq (FIFO) order, ignoring priority
-    -- (repeat.test.ts "processes delayed jobs by priority").
     declare
       v_pri int;
       v_new_prio_seq bigint;
@@ -125,54 +138,6 @@ begin
     end;
   end;
 
-  -- Expired rate-limit window: Redis deletes the key; we drop the row.
-  -- Safe to do outside the advisory lock; concurrent deletes of the same
-  -- expired row are idempotent.
-  delete from :EMQ_SCHEMA.emq_rate_limit_state r
-  where r.queue_id = p_queue_id
-    and r.expires_at is not null
-    and r.expires_at <= now();
-
-  -- Transaction-scoped advisory lock around the rate-limit gate,
-  -- pause/concurrency gate, wait/prioritized pick, activate, AND limiter
-  -- INCR. BullMQ's Lua runs single-threaded inside Redis so the
-  -- read-modify-write of the limiter token is atomic. On PG we MUST
-  -- hold this lock across both the read of `v_tok` and the INCR;
-  -- otherwise N concurrent workers on a fresh queue all observe
-  -- `v_tok IS NULL`, all sneak past the gate, and the limiter
-  -- overshoots (regression seen as
-  -- `Rate Limiter > when queue is paused between rate limit > should
-  -- add active jobs to paused` finishing all 4 jobs before pause lands).
-  --
-  -- We use `pg_advisory_xact_lock` (not session-level) deliberately: a
-  -- session-level `pg_advisory_unlock` released inside the function lets
-  -- another session re-acquire the lock BEFORE the caller's transaction
-  -- commits, so the next worker reads the limiter table at the
-  -- pre-INSERT snapshot under READ COMMITTED and the gate misses. Xact
-  -- locks are released only at COMMIT/ROLLBACK, after the INSERT is
-  -- visible. Xact locks are also re-entrant within the same session, so
-  -- the internal fetch-next path from `emq_move_to_finished_v1` (which
-  -- already holds the same xact lock) succeeds without self-deadlock.
-  -- `FOR UPDATE SKIP LOCKED` still needs mutual exclusion so two
-  -- sessions cannot claim the same wait row.
-  --
-  -- Lock key namespacing: pg_advisory_xact_lock's keyspace is GLOBAL
-  -- (database-wide), but queue_id is a per-schema bigserial. Without
-  -- mixing this schema's identity into the lock key, two different
-  -- test schemas with overlapping queue_ids serialize across each
-  -- other under parallel test runs, turning the rate-limiter test
-  -- (`processes jobs as max limiter from the beginning`, 200 jobs ×
-  -- concurrency 600) from ~3s to a 120s timeout.
-  -- We hash the schema name with a per-feature seed and XOR in the
-  -- queue id to derive a single 64-bit lock key. `hashtextextended`
-  -- is deterministic and fast, avoiding a catalog lookup on every
-  -- moveToActive call. Note: there is no `pg_advisory_xact_lock(bigint,
-  -- int)` overload — only `(bigint)` and `(int, int)` — so we MUST
-  -- pack into a single bigint here.
-  perform pg_advisory_xact_lock(
-    hashtextextended(:EMQ_SCHEMA_NAME_LIT, 2024000001::bigint) # p_queue_id
-  );
-
   select rls.tokens, rls.expires_at into v_tok, v_exp
   from :EMQ_SCHEMA.emq_rate_limit_state rls
   where rls.queue_id = p_queue_id;
@@ -211,9 +176,14 @@ begin
   end if;
 
   if v_concurrency is not null then
+    -- Only count jobs with a valid (non-expired) lock. Expired actives are
+    -- invisible to concurrency until the stalled sweep moves them back.
     select count(*)::int into v_active
     from :EMQ_SCHEMA.emq_jobs
-    where queue_id = p_queue_id and state = 'active';
+    where queue_id = p_queue_id
+      and state = 'active'
+      and lock_expires_at is not null
+      and lock_expires_at > now();
     if v_active >= v_concurrency then
       return query select null::jsonb, null::text, 0, 0::bigint;
       return;

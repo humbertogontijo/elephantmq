@@ -73,6 +73,10 @@ export class LockManager {
                 'error',
                 new Error(`could not renew lock for job ${jobId}`),
               );
+              this.cancelJob(
+                jobId,
+                'could not renew lock for job',
+              );
             }
           }
 

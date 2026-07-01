@@ -621,17 +621,6 @@ export class Worker<
           token,
           this.opts.name ?? this.id,
         );
-        if (process.env.EMQ_DBG_WORKER) {
-          try {
-            require('fs').appendFileSync(
-              '/tmp/emq-dbg.log',
-              `[worker ${this.id}] nowait moveToActive job=${job?.id}` +
-                ` drained=${this.drained} blockUntil=${this.blockUntil}\n`,
-            );
-          } catch {
-            /* ignore */
-          }
-        }
       }
     }
 
@@ -740,17 +729,6 @@ export class Worker<
   }
 
   private onQueueMarkerNotify = (_payload?: string) => {
-    if (process.env.EMQ_DBG_WORKER) {
-      try {
-        require('fs').appendFileSync(
-          '/tmp/emq-dbg.log',
-          `[worker ${this.id}] marker payload=${_payload}` +
-            ` blockUntil=${this.blockUntil} pending=${this.pendingJobResolvers.length}\n`,
-        );
-      } catch {
-        /* ignore */
-      }
-    }
     // BullMQ's `bzpopmin(markerKey)` returns immediately when the marker
     // zset is non-empty. We don't store markers server-side, so latch the
     // fact that a wake was requested here and consume it in `waitForJob` on
@@ -762,16 +740,6 @@ export class Worker<
   };
 
   private onQueueDelayedNotify = (payload?: string) => {
-    if (process.env.EMQ_DBG_WORKER) {
-      try {
-        require('fs').appendFileSync(
-          '/tmp/emq-dbg.log',
-          `[worker ${this.id}] delayed payload=${payload} blockUntil=${this.blockUntil}\n`,
-        );
-      } catch {
-        /* ignore */
-      }
-    }
     if (payload == null || payload === '') {
       this.wakeupJobWaiters(0);
       return;
@@ -1107,7 +1075,6 @@ export class Worker<
               NameType
             >>(
               () => {
-                this.lockManager.untrackJob(job.id);
                 return this.handleFailed(
                   new UnrecoverableError(unrecoverableErrorMessage),
                   job,
@@ -1134,7 +1101,6 @@ export class Worker<
             NameType
           >>(
             () => {
-              this.lockManager.untrackJob(job.id);
               return this.handleCompleted(
                 result,
                 job,
@@ -1152,7 +1118,6 @@ export class Worker<
             NameType
           >>(
             () => {
-              this.lockManager.untrackJob(job.id);
               return this.handleFailed(
                 <Error>err,
                 job,
@@ -1164,7 +1129,6 @@ export class Worker<
             {
               delayInMs: this.opts.runRetryDelay ?? 15000,
               span,
-              onlyEmitError: true,
             },
           );
           return failed;
@@ -1205,51 +1169,38 @@ export class Worker<
     fetchNextCallback = () => true,
     span?: Span,
   ) {
-    if (!this.connection.closing) {
-      const completed = await job.moveToCompleted(
-        result,
-        token,
-        fetchNextCallback() && !(this.closing || this.paused),
-      );
-      if (process.env.EMQ_DBG_WORKER) {
-        try {
-          require('fs').appendFileSync(
-            '/tmp/emq-dbg.log',
-            `[worker ${this.id}] handleCompleted job=${job.id}` +
-              ` nextRaw=${Array.isArray(completed) ? 'array' : typeof completed}\n`,
-          );
-        } catch {
-          /* ignore */
-        }
-      }
+    const completed = await job.moveToCompleted(
+      result,
+      token,
+      fetchNextCallback() && !(this.closing || this.paused),
+    );
 
-      span?.addEvent('job completed', {
-        [TelemetryAttributes.JobResult]: JSON.stringify(result),
-      });
+    span?.addEvent('job completed', {
+      [TelemetryAttributes.JobResult]: JSON.stringify(result),
+    });
 
-      span?.setAttributes({
-        [TelemetryAttributes.JobAttemptsMade]: job.attemptsMade,
-      });
+    span?.setAttributes({
+      [TelemetryAttributes.JobAttemptsMade]: job.attemptsMade,
+    });
 
-      // Advance repeatable schedulers BEFORE emitting `completed`, so
-      // listeners that inspect queue state on `completed` see the next
-      // delayed iteration already present. BullMQ's `moveToFinished-14.lua`
-      // schedules the next iteration atomically inside the same Lua call;
-      // our SQL path computes cron `nextMillis` in JS, so the advance must
-      // happen here. Not doing it pre-emit produces a timing race where
-      // `queueEvents.on('completed')` fires before the next delayed row
-      // exists and tests see `delayedCount=0` when BullMQ sees `1`.
-      let nextJob: Job<DataType, ResultType, NameType> | undefined;
-      if (Array.isArray(completed)) {
-        const [jobData, jobId, rateLimitDelay, delayUntil] = completed;
-        this.updateDelays(rateLimitDelay, delayUntil);
-        nextJob = await this.nextJobFromJobData(jobData, jobId, token);
-      }
-
-      this.emit('completed', job, result, 'active');
-
-      return nextJob;
+    // Advance repeatable schedulers BEFORE emitting `completed`, so
+    // listeners that inspect queue state on `completed` see the next
+    // delayed iteration already present. BullMQ's `moveToFinished-14.lua`
+    // schedules the next iteration atomically inside the same Lua call;
+    // our SQL path computes cron `nextMillis` in JS, so the advance must
+    // happen here. Not doing it pre-emit produces a timing race where
+    // `queueEvents.on('completed')` fires before the next delayed row
+    // exists and tests see `delayedCount=0` when BullMQ sees `1`.
+    let nextJob: Job<DataType, ResultType, NameType> | undefined;
+    if (Array.isArray(completed)) {
+      const [jobData, jobId, rateLimitDelay, delayUntil] = completed;
+      this.updateDelays(rateLimitDelay, delayUntil);
+      nextJob = await this.nextJobFromJobData(jobData, jobId, token);
     }
+
+    this.emit('completed', job, result, 'active');
+
+    return nextJob;
   }
 
   protected async handleFailed(
@@ -1259,47 +1210,45 @@ export class Worker<
     fetchNextCallback = () => true,
     span?: Span,
   ) {
-    if (!this.connection.closing) {
-      // Check if the job was manually rate-limited
-      if (err.message === RATE_LIMIT_ERROR) {
-        const rateLimitTtl = await this.moveLimitedBackToWait(job, token);
-        this.limitUntil = rateLimitTtl > 0 ? Date.now() + rateLimitTtl : 0;
-        return;
-      }
+    // Check if the job was manually rate-limited
+    if (err.message === RATE_LIMIT_ERROR) {
+      const rateLimitTtl = await this.moveLimitedBackToWait(job, token);
+      this.limitUntil = rateLimitTtl > 0 ? Date.now() + rateLimitTtl : 0;
+      return;
+    }
 
-      if (
-        err instanceof DelayedError ||
-        err.name == 'DelayedError' ||
-        err instanceof WaitingError ||
-        err.name == 'WaitingError' ||
-        err instanceof WaitingChildrenError ||
-        err.name == 'WaitingChildrenError'
-      ) {
-        const client = await this.client;
-        return this.moveToActive(client, token, this.opts.name ?? this.id);
-      }
+    if (
+      err instanceof DelayedError ||
+      err.name == 'DelayedError' ||
+      err instanceof WaitingError ||
+      err.name == 'WaitingError' ||
+      err instanceof WaitingChildrenError ||
+      err.name == 'WaitingChildrenError'
+    ) {
+      const client = await this.client;
+      return this.moveToActive(client, token, this.opts.name ?? this.id);
+    }
 
-      const result = await job.moveToFailed(
-        err,
-        token,
-        fetchNextCallback() && !(this.closing || this.paused),
-      );
+    const result = await job.moveToFailed(
+      err,
+      token,
+      fetchNextCallback() && !(this.closing || this.paused),
+    );
 
-      this.emit('failed', job, err, 'active');
+    this.emit('failed', job, err, 'active');
 
-      span?.addEvent('job failed', {
-        [TelemetryAttributes.JobFailedReason]: err.message,
-      });
-      span?.setAttributes({
-        [TelemetryAttributes.JobAttemptsMade]: job.attemptsMade,
-      });
+    span?.addEvent('job failed', {
+      [TelemetryAttributes.JobFailedReason]: err.message,
+    });
+    span?.setAttributes({
+      [TelemetryAttributes.JobAttemptsMade]: job.attemptsMade,
+    });
 
-      // Note: result can be undefined if moveToFailed fails (e.g., lock was lost)
-      if (Array.isArray(result)) {
-        const [jobData, jobId, rateLimitDelay, delayUntil] = result;
-        this.updateDelays(rateLimitDelay, delayUntil);
-        return this.nextJobFromJobData(jobData, jobId, token);
-      }
+    // Note: result can be undefined if moveToFailed fails (e.g., lock was lost)
+    if (Array.isArray(result)) {
+      const [jobData, jobId, rateLimitDelay, delayUntil] = result;
+      this.updateDelays(rateLimitDelay, delayUntil);
+      return this.nextJobFromJobData(jobData, jobId, token);
     }
   }
 
@@ -1496,7 +1445,7 @@ export class Worker<
   private async stalledChecker() {
     await runStalledCheckerLoop({
       stalledIntervalMs: this.opts.stalledInterval ?? 30000,
-      shouldStop: () => !!(this.closing || this.paused),
+      shouldStop: () => !!this.closing,
       onTick: () =>
         this.checkConnectionError(() =>
           execMoveStalledJobsToWait(this),

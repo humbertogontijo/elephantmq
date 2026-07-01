@@ -90,8 +90,8 @@ Manual retries (`Queue.retryJobs`, `Job.reprocess`) call dedicated SQL functions
 If a worker process dies between claiming and finishing a job, the row stays in `state = 'active'` with a `lock_expires_at` in the past. Each worker periodically (every `stalledInterval`, default 30s) calls `emq_move_stalled_jobs_to_wait_v1`, which:
 
 - Finds active rows whose lease has expired.
-- If they still have attempts remaining, moves them back to `wait` and increments a stalled counter.
-- If they don't, moves them to `failed` with a "job stalled more than allowable limit" reason.
+- If `stalled_counter + 1` exceeds `maxStalledCount`, moves them directly to `failed` with a "job stalled more than allowable limit" reason.
+- Otherwise moves them back to `wait` (or `paused` when the queue is paused) and increments the stalled counter.
 
 Workers renew their lease via `emq_extend_locks_v1` on a timer at half the lock duration, so the only way a job stalls is if the worker process is genuinely gone.
 

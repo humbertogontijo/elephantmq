@@ -218,7 +218,8 @@ begin
         locked_at = null,
         lock_expires_at = null,
         attempts_made = attempts_made + 1
-    where pk = j.pk;
+    where pk = j.pk
+      and state = 'active';
   else
     update :EMQ_SCHEMA.emq_jobs
     set state = 'failed',
@@ -239,7 +240,8 @@ begin
         -- as "unrecoverable" on any subsequent reprocess (mirrors the
         -- `HDEL ... defa` in moveToFinished-14.lua).
         deferred_failure = null
-    where pk = j.pk;
+    where pk = j.pk
+      and state = 'active';
   end if;
 
   -- keepLastIfActive: if a pending next job was stashed while this job was
@@ -418,9 +420,11 @@ begin
     );
   end if;
 
-  -- BullMQ emits `retries-exhausted` when the job reaches the failed terminal
-  -- state after having attempted at least once and burned through all retries.
-  if p_target <> 'completed' and j.max_attempts > 0 then
+  -- BullMQ emits `retries-exhausted` only when the job has exhausted all
+  -- configured attempts (not on every terminal failure while retries remain).
+  if p_target <> 'completed'
+     and j.max_attempts > 0
+     and (j.attempts_made + 1) >= j.max_attempts then
     perform :EMQ_SCHEMA.emq_emit_event_v1(
       p_queue_id,
       'retries-exhausted',

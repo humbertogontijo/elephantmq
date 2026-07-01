@@ -227,38 +227,10 @@ export class JobScheduler extends QueueBase {
               producerId,
             );
 
-            // When `every` mode detects a collision with the target slot's
-            // job id (mirroring BullMQ's `addJobScheduler-11.lua`), the SQL
-            // helper advances `nextMillis` by one `every` period. In that
-            // case we must rebuild `mergedOpts` so `Job.create` inserts the
-            // delayed row at the advanced slot (correct jobId and delay).
-            const finalMergedOpts =
-              effectiveNext !== nextMillis
-                ? this.getNextJobOpts(
-                    effectiveNext,
-                    jobSchedulerId,
-                    {
-                      ...opts,
-                      repeat: filteredRepeatOpts,
-                      telemetry,
-                    },
-                    iterationCount,
-                    newOffset ?? undefined,
-                  )
-                : mergedOpts;
-
-            // BullMQ's `addJobScheduler` Lua persists the first iteration's
-            // delayed job in the same round-trip. Our SQL helper only
-            // upserts the scheduler row, so we need to explicitly create the
-            // delayed job here so workers actually pick it up.
-            const job = await this.Job.create<T, R, N>(
-              this,
-              jobName,
-              jobData,
-              finalMergedOpts,
-            );
-
-            job.id = jobId;
+            // The delayed iteration is created atomically inside
+            // `emq_add_job_scheduler_v1`; load the persisted row for the
+            // public Job handle.
+            const job = (await Job.fromId<T, R, N>(this, jobId))!;
 
             span?.setAttributes({
               [TelemetryAttributes.JobSchedulerId]: jobSchedulerId,
@@ -654,7 +626,9 @@ export const defaultRepeatStrategy = (
     } else {
       return interval.next().getTime();
     }
-  } catch {
-    // Ignore error
+  } catch (err) {
+    throw new Error(
+      `Invalid cron pattern "${pattern}": ${(err as Error).message}`,
+    );
   }
 };

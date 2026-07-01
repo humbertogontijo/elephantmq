@@ -160,6 +160,19 @@ export interface QueueEventsListener extends EmqConnectionListener {
   paused: (args: object, id: string) => void;
 
   /**
+   * Listen to 'logs' event.
+   *
+   * This event is triggered when a log line is appended to a job via
+   * {@link Job.log}.
+   *
+   * @param args - An object containing the job identifier and log line.
+   *  - `jobId` - The unique identifier of the job.
+   *  - `log` - The log message.
+   * @param id - The identifier of the event.
+   */
+  logs: (args: { jobId: string; log: string }, id: string) => void;
+
+  /**
    * Listen to 'progress' event.
    *
    * This event is triggered when a job updates its progress via the `Job#updateProgress()` method, allowing

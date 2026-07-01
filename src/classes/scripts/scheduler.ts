@@ -14,7 +14,6 @@ export class SchedulerScripts extends GettersScripts {
     _delayedJobOpts: JobsOptions,
     producerId?: string,
   ): Promise<[string, number]> {
-    void _delayedJobOpts;
     const client = await this.queue.client;
     const S = this.S();
     const {
@@ -26,7 +25,8 @@ export class SchedulerScripts extends GettersScripts {
     }>(
       `select * from ${S}.emq_add_job_scheduler_v1(
         $1::bigint, $2::text, $3::bigint, $4::text, $5::jsonb, $6::jsonb, $7::jsonb, $8::text,
-        $9::text, $10::bigint, $11::bigint, $12::int, $13::text, $14::bigint, $15::bigint
+        $9::text, $10::bigint, $11::bigint, $12::int, $13::text, $14::bigint, $15::bigint,
+        $16::jsonb
       )`,
       [
         await this.qid(),
@@ -58,6 +58,7 @@ export class SchedulerScripts extends GettersScripts {
             ? opts.endDate
             : new Date(opts.endDate).getTime()
           : null,
+        JSON.parse(JSON.stringify(_delayedJobOpts)),
       ],
     );
     if (row?.err_code === -10) {

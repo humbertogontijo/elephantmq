@@ -239,7 +239,7 @@ begin
 
   v_prio := coalesce((p_opts->>'priority')::int, 0);
   v_delay := coalesce((p_opts->>'delay')::bigint, 0);
-  v_max_attempts := coalesce((p_opts->>'attempts')::int, 3);
+  v_max_attempts := coalesce((p_opts->>'attempts')::int, 1);
 
   insert into :EMQ_SCHEMA.emq_jobs (
     queue_id, job_id, name, data, opts, state, priority, prio_seq, delay_ms, timestamp, max_attempts,

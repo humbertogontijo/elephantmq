@@ -32,21 +32,14 @@ export async function execMoveStalledJobsToWait(
     host.name,
     async span => {
       const [stalled, failed] = await scripts.moveStalledJobsToWait();
-      if (process.env.EMQ_DBG_WORKER) {
-        try {
-          require('fs').appendFileSync(
-            '/tmp/emq-dbg.log',
-            `[worker ${host.id}] stalled recovered=${JSON.stringify(stalled)} failed=${JSON.stringify(failed)}\n`,
-          );
-        } catch {
-          /* ignore */
-        }
-      }
 
       span?.setAttributes({
         [TelemetryAttributes.WorkerId]: host.id,
         [TelemetryAttributes.WorkerName]: host.opts.name,
         [TelemetryAttributes.WorkerStalledJobs]: stalled,
+        ...(failed.length > 0
+          ? { 'worker.stalled.failed_jobs': failed }
+          : {}),
       });
 
       stalled.forEach((jobId: string) => {
@@ -55,8 +48,6 @@ export async function execMoveStalledJobsToWait(
         });
         host.emit('stalled', jobId, 'active');
       });
-
-      void failed;
     },
   );
 }

@@ -323,12 +323,25 @@ export class LifecycleScripts extends AddJobsScripts {
     const { failedReason, stacktrace } = extractFailureFields(
       opts?.fieldsToUpdate,
     );
+    const qOpts = this.queue.opts as WorkerOptions;
+    const lim = qOpts?.limiter;
+    const limMax = lim?.max ?? null;
+    const limDur = lim?.duration ?? null;
+    const now = Date.now();
+    const lockMs = qOpts.lockDuration ?? 30000;
     const {
       rows: [r],
-    } = await client.query<{ c: number }>(
-      `select ${this.S()}.emq_move_to_delayed_v1(
-         $1::bigint, $2::text, $3::bigint, $4::text, $5::text, $6::text[], $7::bigint
-       ) as c`,
+    } = await client.query<{
+      err_code: number;
+      next_job_row: unknown;
+      next_job_id: string | null;
+      rate_limit_delay_ms: number;
+      block_until_ms: string | number;
+    }>(
+      `select * from ${this.S()}.emq_move_to_delayed_v1(
+         $1::bigint, $2::text, $3::bigint, $4::text, $5::text, $6::text[], $7::bigint,
+         $8::boolean, $9::bigint, $10::text, $11::bigint, $12::bigint, $13::bigint
+       )`,
       [
         await this.qid(),
         jobId,
@@ -337,9 +350,15 @@ export class LifecycleScripts extends AddJobsScripts {
         failedReason,
         stacktrace,
         delay,
+        !!opts?.fetchNext,
+        lockMs,
+        qOpts.name ?? null,
+        limMax,
+        limDur,
+        now,
       ],
     );
-    const result = r?.c ?? -1;
+    const result = r?.err_code ?? -1;
     if (result < 0) {
       throw this.finishedErrors({
         code: result,
@@ -348,29 +367,22 @@ export class LifecycleScripts extends AddJobsScripts {
         state: 'active',
       });
     }
-    // BullMQ's moveToDelayed-12.lua piggy-backs a move-to-active when
-    // fetchNext=true; the Lua check is `if result and type(result[1]) ==
-    // "table" then return result`, so the client only ever observes a
-    // next-job tuple when an actual job was fetched. Otherwise the script
-    // returns 0 which becomes `raw2NextJobData(0) === []` in
-    // Job.moveToFailed.
-    //
-    // elephantmq diverges here: the Redis port wakes the main loop via the
-    // marker zset + BRPOPLPUSH, whereas our workers size their `waitForJob`
-    // sleep from `this.blockUntil`. We therefore forward the rate-limit /
-    // block_until values even when no job was fetched so
-    // `Worker.handleFailed` -> `updateDelays` can schedule the next wake
-    // synchronously (self-NOTIFY delivery is async and fake-timer tests
-    // install Date/setTimeout fakes that skew the NOTIFY-vs-waitForJob
-    // race).
     if (opts?.fetchNext) {
-      const next = await this.moveToActive(client, token);
-      if (next && Array.isArray(next)) {
-        if (next[0]) {
-          return next;
-        }
-        return raw2NextJobData([null, null, next[2] ?? 0, next[3] ?? 0]);
+      if (r?.next_job_row && r?.next_job_id) {
+        const flat = rowToFlatJobFields(jsonJobRowFromDb(r.next_job_row));
+        return raw2NextJobData([
+          flat,
+          r.next_job_id,
+          r.rate_limit_delay_ms ?? 0,
+          Number(r.block_until_ms ?? 0),
+        ]);
       }
+      return raw2NextJobData([
+        null,
+        null,
+        r?.rate_limit_delay_ms ?? 0,
+        Number(r?.block_until_ms ?? 0),
+      ]);
     }
     return raw2NextJobData(0 as unknown as any[]);
   }
@@ -457,29 +469,26 @@ export class LifecycleScripts extends AddJobsScripts {
 
   async retryJobs(
     state: FinishedStatus = 'failed',
-    _count = 1000,
-    _timestamp = new Date().getTime(),
+    count = 1000,
+    timestamp = new Date().getTime(),
   ): Promise<number> {
-    void _count;
-    void _timestamp;
     const client = await this.queue.client;
     const {
       rows: [r],
     } = await client.query<{ c: number }>(
-      `select ${this.S()}.emq_move_jobs_to_wait_v1($1::bigint, $2::text) as c`,
-      [await this.qid(), state],
+      `select ${this.S()}.emq_move_jobs_to_wait_v1($1::bigint, $2::text, $3::int, $4::bigint) as c`,
+      [await this.qid(), state, count, timestamp],
     );
     return r?.c ?? 0;
   }
 
   async promoteJobs(count = 1000): Promise<number> {
-    void count;
     const client = await this.queue.client;
     const {
       rows: [r],
     } = await client.query<{ c: number }>(
-      `select ${this.S()}.emq_move_jobs_to_wait_v1($1::bigint, $2::text) as c`,
-      [await this.qid(), 'delayed'],
+      `select ${this.S()}.emq_move_jobs_to_wait_v1($1::bigint, $2::text, $3::int, $4::bigint) as c`,
+      [await this.qid(), 'delayed', count, Number.MAX_SAFE_INTEGER],
     );
     return r?.c ?? 0;
   }

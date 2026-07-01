@@ -189,7 +189,7 @@ begin
       );
   end if;
 
-  v_max_attempts := coalesce((p_opts->>'attempts')::int, 3);
+  v_max_attempts := coalesce((p_opts->>'attempts')::int, 1);
 
   -- Preserve the caller-supplied `priority`/`delay` on the parent-for-flow
   -- row so it is honoured when moveParentToWait promotes the job out of

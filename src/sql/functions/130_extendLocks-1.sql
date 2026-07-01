@@ -20,7 +20,6 @@ as $fn$
       and j.lock_token = inp.tok
       and j.state = 'active'
       and j.lock_expires_at is not null
-      and j.lock_expires_at > now()
     returning j.job_id
   )
   select coalesce(array_agg(inp.job_id), '{}')

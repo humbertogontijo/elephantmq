@@ -17,7 +17,8 @@ create or replace function :EMQ_SCHEMA.emq_add_job_scheduler_v1(
   p_limit_count int default null,
   p_tz text default null,
   p_start_date bigint default null,
-  p_end_date bigint default null
+  p_end_date bigint default null,
+  p_delayed_opts jsonb default null
 ) returns table (out_scheduler_id text, out_next_millis bigint, err_code int)
 language plpgsql
 as $fn$
@@ -132,6 +133,23 @@ begin
     start_date = excluded.start_date,
     end_date = excluded.end_date,
     iteration_count = coalesce(:EMQ_SCHEMA.emq_job_schedulers.iteration_count, 1);
+
+  -- Materialise the first delayed iteration in the same transaction as the
+  -- scheduler upsert (mirrors addJobScheduler-11.lua).
+  v_new_job_id := 'repeat:' || p_scheduler_id || ':' || v_effective_next::text;
+  perform :EMQ_SCHEMA.emq_add_delayed_job_v1(
+    p_queue_id,
+    v_new_job_id,
+    p_name,
+    coalesce(p_data, '{}'::jsonb),
+    coalesce(p_delayed_opts, p_opts, '{}'::jsonb),
+    (extract(epoch from now()) * 1000)::bigint,
+    null,
+    null,
+    null,
+    p_scheduler_id,
+    null
+  );
 
   return query select p_scheduler_id, v_effective_next, 0;
 end;

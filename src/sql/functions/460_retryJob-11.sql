@@ -52,18 +52,59 @@ begin
 
   -- Mirror retryJob-11.lua: promote any ready delayed jobs BEFORE we push
   -- the retried job back to wait, so delayed jobs keep their temporal order
-  -- and don't get jumped by a just-failed retry. Required by the
-  -- "when there are delayed jobs between retries" worker tests.
-  update :EMQ_SCHEMA.emq_jobs j
-  set state = case when coalesce(v_paused, false)
-      then 'paused':: :EMQ_SCHEMA.emq_job_state
-      else 'wait':: :EMQ_SCHEMA.emq_job_state
-    end,
-      wait_seq = :EMQ_SCHEMA.emq_next_wait_seq_v1(p_queue_id),
-      delay_ms = 0
-  where j.queue_id = p_queue_id
-    and j.state = 'delayed'
-    and j.process_at <= to_timestamp(p_now_ms / 1000.0);
+  -- and don't get jumped by a just-failed retry. Route priority > 0 jobs to
+  -- `prioritized` like moveToActive's promoteDelayedJobs path.
+  declare
+    v_promoted_id text;
+    v_promoted_pri int;
+    v_new_prio_seq bigint;
+  begin
+    for v_promoted_id, v_promoted_pri in
+      select j.job_id, coalesce(j.priority, 0)
+      from :EMQ_SCHEMA.emq_jobs j
+      where j.queue_id = p_queue_id
+        and j.state = 'delayed'
+        and j.process_at <= to_timestamp(p_now_ms / 1000.0)
+      order by j.process_at asc, j.priority asc, j.pk asc
+    loop
+      if v_promoted_pri > 0 then
+        update :EMQ_SCHEMA.emq_queue_counters
+        set priority_num = priority_num + 1
+        where queue_id = p_queue_id
+        returning priority_num into v_new_prio_seq;
+        if v_new_prio_seq is null then
+          insert into :EMQ_SCHEMA.emq_queue_counters (queue_id, priority_num)
+          values (p_queue_id, 1)
+          on conflict (queue_id) do update
+            set priority_num = :EMQ_SCHEMA.emq_queue_counters.priority_num + 1
+          returning priority_num into v_new_prio_seq;
+        end if;
+
+        update :EMQ_SCHEMA.emq_jobs j
+        set state = case when coalesce(v_paused, false)
+            then 'paused':: :EMQ_SCHEMA.emq_job_state
+            else 'prioritized':: :EMQ_SCHEMA.emq_job_state
+          end,
+            prio_seq = v_new_prio_seq,
+            delay_ms = 0
+        where j.queue_id = p_queue_id and j.job_id = v_promoted_id;
+      else
+        update :EMQ_SCHEMA.emq_jobs j
+        set state = case when coalesce(v_paused, false)
+            then 'paused':: :EMQ_SCHEMA.emq_job_state
+            else 'wait':: :EMQ_SCHEMA.emq_job_state
+          end,
+            wait_seq = :EMQ_SCHEMA.emq_next_wait_seq_v1(p_queue_id),
+            delay_ms = 0
+        where j.queue_id = p_queue_id and j.job_id = v_promoted_id;
+      end if;
+      perform :EMQ_SCHEMA.emq_emit_event_v1(
+        p_queue_id,
+        'waiting',
+        jsonb_build_object('jobId', v_promoted_id, 'prev', 'delayed')
+      );
+    end loop;
+  end;
 
   -- Persist failure bookkeeping (stacktrace, failedReason) on retry so callers
   -- like Job.moveToFailed(err, token) that route into retry still surface the
