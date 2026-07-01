@@ -40,7 +40,7 @@ describe('Chaos: multi-worker reliability', () => {
         },
       );
 
-    let workers = [makeWorker(), makeWorker()];
+    const workers = [makeWorker(), makeWorker()];
 
     try {
       for (let i = 0; i < jobCount; i++) {

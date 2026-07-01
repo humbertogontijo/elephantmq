@@ -206,7 +206,7 @@ export class JobScheduler extends QueueBase {
               nextMillis = now;
             }
 
-            const [jobId, effectiveNext] = await this.scripts.addJobScheduler(
+            const [jobId] = await this.scripts.addJobScheduler(
               jobSchedulerId,
               nextMillis,
               JSON.stringify(typeof jobData === 'undefined' ? {} : jobData),
